@@ -3,7 +3,8 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
-  <title>車城國小｜學力檢測 AI 智慧補救系統 (v13.4)</title>
+  <!-- v14.0：更新 GAS URL；新增 Claude Worker 前端直呼叫，解決 GAS 30 秒超時 -->
+  <title>車城國小｜學力檢測 AI 智慧補救系統 (v14.0)</title>
   <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/css/bootstrap.min.css" rel="stylesheet">
   <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/js/bootstrap.bundle.min.js"></script>
   <script src="https://cdn.jsdelivr.net/npm/sweetalert2@11"></script>
@@ -58,6 +59,9 @@
     #hidden-print-frame{position:fixed;left:-9999px;top:-9999px;width:210mm;height:297mm;border:none;pointer-events:none;visibility:hidden;}
     .ws-mgmt-card{border:2px solid #ffe082;border-radius:14px;padding:18px;background:#fffde7;}
     .ws-mgmt-card h6{color:#e65100;font-weight:700;}
+    /* Claude Worker 模式標籤 */
+    .badge-worker{background:linear-gradient(135deg,#7c3aed,#4f46e5)!important;color:#fff!important;}
+    .worker-mode-hint{background:#f3e8ff;border:1px solid #c4b5fd;border-radius:8px;padding:8px 12px;font-size:.8rem;color:#5b21b6;}
     @media print{
       header.app-header,footer,#scratch-btn,#scratch-modal,#hidden-print-frame,.btn:not(.print-keep),nav,.nav-tabs,#ws-gen-progress,#ws-buttons{display:none!important;}
       body,main{background:#fff!important;}
@@ -78,7 +82,6 @@
     footer{background:#fff;border-top:1px solid #e0e0e0;padding:10px 0;font-size:.78rem;color:#9e9e9e;text-align:center;}
     footer a{color:#9e9e9e;text-decoration:none;}
     footer a:hover{color:var(--primary);}
-    /* 節點預設選項樣式 */
     .node-preset-btn{display:inline-block;margin:3px;padding:4px 12px;border-radius:16px;border:1.5px solid #90caf9;background:#e3f2fd;color:#1565c0;font-size:.82rem;cursor:pointer;transition:all .18s;}
     .node-preset-btn:hover,.node-preset-btn.active{background:var(--primary);border-color:var(--primary);color:#fff;}
     .gas-url-input{font-size:.78rem;font-family:monospace;padding:6px 10px;border-radius:8px;border:1px solid #ced4da;background:#f8f9fa;}
@@ -189,6 +192,7 @@
           </ul>
           <div class="tab-content">
 
+            <!-- ===== 快速精靈 ===== -->
             <div class="tab-pane fade show active" id="tab-wizard">
               <div class="alert alert-success py-2 px-3 small mb-3"><b>🚀 快速設定精靈</b>：不需要 Excel，直接輸入學生資料與弱點節點，一鍵建立任務並出題。</div>
               <div class="card border-0 bg-light p-3 mb-3">
@@ -219,8 +223,17 @@
                 </div>
               </div>
               <div class="card border-0 bg-light p-3 mb-3">
-                <h6 class="fw-bold mb-2">④ 確認並建立任務</h6>
-                <div id="wiz-summary" class="alert alert-info small py-2 mb-2" style="display:none;"></div>
+                <h6 class="fw-bold mb-2">④ 出題引擎選擇</h6>
+                <!-- ★ 新增：出題引擎選擇 ★ -->
+                <div id="wiz-engine-selector" class="mb-3">
+                  <div class="d-flex flex-wrap gap-3 mb-2">
+                    <div class="form-check"><input class="form-check-input" type="radio" name="wiz-engine" id="wiz-engine-gas" value="gas" checked onchange="onWizEngineChange()"><label class="form-check-label small fw-bold" for="wiz-engine-gas"><i class="fa-solid fa-server me-1 text-success"></i>GAS（原有）</label></div>
+                    <div class="form-check"><input class="form-check-input" type="radio" name="wiz-engine" id="wiz-engine-worker" value="worker" onchange="onWizEngineChange()"><label class="form-check-label small fw-bold" for="wiz-engine-worker"><i class="fa-solid fa-bolt me-1 text-purple" style="color:#7c3aed;"></i>Claude Worker <span class="badge badge-worker ms-1" style="font-size:.65rem;">無超時限制</span></label></div>
+                  </div>
+                  <div id="wiz-worker-hint" class="worker-mode-hint" style="display:none;">
+                    <i class="fa-solid fa-circle-info me-1"></i>使用 <b>Claude Worker</b> 前端直呼叫，繞過 GAS 30 秒限制。題目由 Worker 生成後直接寫回 GAS 資料庫。
+                  </div>
+                </div>
                 <div class="d-flex gap-2 flex-wrap">
                   <button class="btn btn-primary" onclick="wizardInitDB()"><i class="fa-solid fa-database me-1"></i>先初始化資料庫</button>
                   <button class="btn btn-success" onclick="wizardCreateAndGenerate()"><i class="fa-solid fa-wand-magic-sparkles me-1"></i>建立任務並出題</button>
@@ -232,6 +245,7 @@
               </div>
             </div>
 
+            <!-- ===== Excel 上傳 ===== -->
             <div class="tab-pane fade" id="tab-upload">
               <div class="row g-3">
                 <div class="col-12 col-md-4"><label class="form-label fw-bold small">任務名稱</label><input id="task-name" type="text" class="form-control" placeholder="例：五年甲班114上學力檢測"></div>
@@ -261,9 +275,13 @@
                 <div class="col-12">
                   <label class="form-label fw-bold small">出題方式</label>
                   <div class="d-flex flex-wrap gap-3">
-                    <div class="form-check"><input class="form-check-input" type="radio" name="gen-mode" id="mode-ai" value="ai" checked onchange="toggleFolderInput()"><label class="form-check-label small" for="mode-ai">純 AI 生成</label></div>
-                    <div class="form-check"><input class="form-check-input" type="radio" name="gen-mode" id="mode-pdf" value="pdf" onchange="toggleFolderInput()"><label class="form-check-label small" for="mode-pdf">依 PDF 教材出題</label></div>
-                    <div class="form-check"><input class="form-check-input" type="radio" name="gen-mode" id="mode-mixed" value="mixed" onchange="toggleFolderInput()"><label class="form-check-label small" for="mode-mixed">混合模式</label></div>
+                    <div class="form-check"><input class="form-check-input" type="radio" name="gen-mode" id="mode-ai" value="ai" checked onchange="toggleFolderInput()"><label class="form-check-label small" for="mode-ai">純 AI 生成（GAS）</label></div>
+                    <div class="form-check"><input class="form-check-input" type="radio" name="gen-mode" id="mode-pdf" value="pdf" onchange="toggleFolderInput()"><label class="form-check-label small" for="mode-pdf">依 PDF 教材出題（GAS）</label></div>
+                    <div class="form-check"><input class="form-check-input" type="radio" name="gen-mode" id="mode-mixed" value="mixed" onchange="toggleFolderInput()"><label class="form-check-label small" for="mode-mixed">混合模式（GAS）</label></div>
+                    <div class="form-check"><input class="form-check-input" type="radio" name="gen-mode" id="mode-worker" value="worker" onchange="toggleFolderInput()"><label class="form-check-label small fw-bold" for="mode-worker"><i class="fa-solid fa-bolt me-1" style="color:#7c3aed;"></i>Claude Worker <span class="badge badge-worker ms-1" style="font-size:.65rem;">無超時限制</span></label></div>
+                  </div>
+                  <div id="upload-worker-hint" class="worker-mode-hint mt-2" style="display:none;">
+                    <i class="fa-solid fa-circle-info me-1"></i>前端直呼叫 Claude Worker 生成題目，不受 GAS 30 秒限制。
                   </div>
                 </div>
                 <div class="col-12" id="folder-input-area" style="display:none;"><label class="form-label fw-bold small">Google Drive PDF 資料夾 ID</label><input id="folder-id-input" type="text" class="form-control" placeholder="貼上資料夾 ID（留空使用系統設定）"></div>
@@ -278,19 +296,33 @@
               </div>
             </div>
 
+            <!-- ===== 題庫管理 ===== -->
             <div class="tab-pane fade" id="tab-bank"><div id="bank-status"><div class="text-muted small">點擊「題庫管理」標籤載入…</div></div></div>
 
+            <!-- ===== 成績 ===== -->
             <div class="tab-pane fade" id="tab-results">
               <div class="row g-2 mb-3"><div class="col-12 col-md-6"><label class="form-label fw-bold small">選擇任務</label><select id="results-task" class="form-select" onchange="loadResults()"><option value="">-- 請選擇 --</option></select></div></div>
               <div id="results-area"></div>
             </div>
 
+            <!-- ===== 差異化 ===== -->
             <div class="tab-pane fade" id="tab-analysis">
               <div class="row g-2 mb-3"><div class="col-12 col-md-6"><label class="form-label fw-bold small">選擇任務</label><select id="analysis-task" class="form-select" onchange="loadAnalysis()"><option value="">-- 請選擇 --</option></select></div></div>
               <div id="analysis-area"></div>
               <div class="mt-3" id="worksheet-area" style="display:none;">
                 <div class="ws-mgmt-card">
                   <h6><i class="fa-solid fa-file-lines me-1"></i>AI 差異化補教講義</h6>
+                  <!-- ★ 新增：學習單引擎選擇 ★ -->
+                  <div class="mb-3">
+                    <label class="form-label fw-bold small text-muted">生成引擎</label>
+                    <div class="d-flex flex-wrap gap-3">
+                      <div class="form-check"><input class="form-check-input" type="radio" name="ws-engine" id="ws-engine-gas" value="gas" checked onchange="onWsEngineChange()"><label class="form-check-label small" for="ws-engine-gas"><i class="fa-solid fa-server me-1 text-success"></i>GAS（原有）</label></div>
+                      <div class="form-check"><input class="form-check-input" type="radio" name="ws-engine" id="ws-engine-worker" value="worker" onchange="onWsEngineChange()"><label class="form-check-label small fw-bold" for="ws-engine-worker"><i class="fa-solid fa-bolt me-1" style="color:#7c3aed;"></i>Claude Worker <span class="badge badge-worker ms-1" style="font-size:.65rem;">無超時限制</span></label></div>
+                    </div>
+                    <div id="ws-worker-hint" class="worker-mode-hint mt-2" style="display:none;">
+                      <i class="fa-solid fa-circle-info me-1"></i>前端直呼叫 Claude Worker，完整輸出學習單 HTML，不受 GAS 30 秒限制。
+                    </div>
+                  </div>
                   <div id="ws-state-idle">
                     <button class="btn btn-warning btn-sm" onclick="genWorksheet()">
                       <i class="fa-solid fa-wand-magic-sparkles me-1"></i>生成講義（取前3大弱點節點）
@@ -315,6 +347,7 @@
               </div>
             </div>
 
+            <!-- ===== 設定 ===== -->
             <div class="tab-pane fade" id="tab-settings">
               <div class="row g-4">
                 <div class="col-12 col-lg-5">
@@ -328,6 +361,16 @@
                         <input type="text" id="setting-help-url" class="form-control" placeholder="https://... 留空則隱藏按鈕">
                         <button class="btn btn-warning" onclick="saveHelpUrl()">儲存</button>
                       </div>
+                    </div>
+                    <hr>
+                    <!-- ★ 新增：Claude Worker 設定 ★ -->
+                    <div class="mb-3 p-2 border border-purple rounded" style="border-color:#c4b5fd!important;background:#faf5ff;">
+                      <label class="form-label text-muted small fw-bold"><i class="fa-solid fa-bolt me-1" style="color:#7c3aed;"></i>Claude Worker 網址</label>
+                      <div class="input-group input-group-sm">
+                        <input type="text" id="setting-worker-url" class="form-control font-monospace" placeholder="https://...workers.dev">
+                        <button class="btn btn-outline-secondary" onclick="saveWorkerUrl()">儲存</button>
+                      </div>
+                      <div class="mt-1 small text-muted">用於前端直呼叫 Claude，繞過 GAS 30 秒限制</div>
                     </div>
                     <hr>
                     <div class="mb-3">
@@ -415,7 +458,7 @@
 
 <footer class="mt-4">
   <div class="container px-3">
-    車城國小資訊老師 @ Google Gemini 協作設計 ｜ v13.4 ｜
+    車城國小資訊老師 @ Google Gemini × Claude 協作設計 ｜ v14.0 ｜
     <a href="https://github.com/st887105/20260404" target="_blank"><i class="fa-brands fa-github me-1"></i>原始碼</a>
   </div>
 </footer>
@@ -424,32 +467,40 @@
 'use strict';
 
 // ==========================================
-// ⚙️ 全域設定 - GAS URL
+// ⚙️ 全域設定
 // ==========================================
-// ★ 每次部署新版 GAS 後，只需要修改這一行 ★
+// ★ 更新為最新 GAS URL ★
 const DEFAULT_GAS_URL = 'https://script.google.com/macros/s/AKfycbzgsFEGhSZyXGg4K9xq3Z_VROkTYUyFapdPsy4pBaiY7lbZzQR2U8cQxOBAxH3283EXOA/exec';
 
-// ★ Cloudflare Worker Proxy（解決無痕模式 + Google 帳號登入的 CORS 問題）★
-// Worker 會把請求轉發給 GAS，並加上正確的 CORS header
+// ★ 原有 Cloudflare Worker Proxy（解決一般 CORS 問題）★
 const WORKER_URL = 'https://gas-proxy.sunny-f0b.workers.dev';
 
-// 規則：永遠以 DEFAULT_GAS_URL 為主，localStorage 只在使用者明確「套用」後才覆蓋
-// 無痕模式 / 一般模式 / 任何瀏覽器 → 行為完全一致，不需要手動重新連線
+// ★ 新增：Claude Worker（前端直呼叫，解決 GAS 30 秒超時）★
+// 用於題庫生成（generateBatch）與學習單生成（generateTeachingWorksheet）
+const DEFAULT_CLAUDE_WORKER_URL = 'https://20260501claude-worksheet.sunny-f0b.workers.dev';
+
 function _loadGasUrl() {
   try {
     const saved = localStorage.getItem('gasUrl');
-    // 只有當 localStorage 裡的網址跟預設不同時，才代表使用者曾明確修改過
     return (saved && saved !== DEFAULT_GAS_URL) ? saved : DEFAULT_GAS_URL;
-  } catch(e) {
-    return DEFAULT_GAS_URL;
-  }
+  } catch(e) { return DEFAULT_GAS_URL; }
 }
 function _saveGasUrlToStorage(url) {
   try { localStorage.setItem('gasUrl', url); } catch(e) {}
 }
+function _loadClaudeWorkerUrl() {
+  try {
+    const saved = localStorage.getItem('claudeWorkerUrl');
+    return saved || DEFAULT_CLAUDE_WORKER_URL;
+  } catch(e) { return DEFAULT_CLAUDE_WORKER_URL; }
+}
+function _saveClaudeWorkerUrl(url) {
+  try { localStorage.setItem('claudeWorkerUrl', url); } catch(e) {}
+}
 
 const app = {
   gasUrl: _loadGasUrl(),
+  claudeWorkerUrl: _loadClaudeWorkerUrl(),
   adminPwd:'', taskList:[], studentList:[],
   currentStudent:null, currentTask:null,
   quizQuestions:[], qIndex:0, answers:[],
@@ -474,11 +525,11 @@ const PRESET_NODES = {
   '三年級':{'數學':['整數的加減法','整數的乘除法','概數與估算','分數基礎','時間計算','長度與重量','圖形分類','乘法表應用','陣列與倍數','資料整理'],'國語':['注音符號','字音辨識','字形與部首','詞語釋義','句子練習','閱讀理解-直述','段落大意','標點符號','日記格式','說故事技巧']}
 };
 
-const WAITING_MSGS=['☕ 泡杯茶放鬆，AI 正努力為學生出題中…','🤔 AI 正認真分析每個知識節點，請稍候…','📚 依據布魯姆認知層次，設計四個難度的題目…','✏️ 正在把關題目品質，確認選項與解析完整…','🎯 精準對焦學生弱點，客製化出題中…','🌟 AI 老師正埋頭苦幹，快了快了…','⏳ 免費版 AI 比較慢，感謝耐心等候！','🍵 已完成部分批次，繼續努力中…','💡 題目正在考慮要出 Level D、C、B 還是 A…','🚀 每道題都是為車城國小學生量身打造的！'];
+const WAITING_MSGS=['☕ 泡杯茶放鬆，AI 正努力為學生出題中…','🤔 AI 正認真分析每個知識節點，請稍候…','📚 依據布魯姆認知層次，設計四個難度的題目…','✏️ 正在把關題目品質，確認選項與解析完整…','🎯 精準對焦學生弱點，客製化出題中…','🌟 AI 老師正埋頭苦幹，快了快了…','⏳ Claude Worker 正在生成，不受時間限制，請耐心等候…','🍵 已完成部分批次，繼續努力中…','💡 題目正在考慮要出 Level D、C、B 還是 A…','🚀 每道題都是為車城國小學生量身打造的！'];
 let _rotatorInterval=null, _rotMsgIdx=0, _waitStart=0;
 
 // ==========================================
-// 🔗 GAS URL 快速修改（首頁功能）
+// 🔗 GAS URL 快速修改
 // ==========================================
 function _initGasUrlDisplay() {
   const display = document.getElementById('gas-url-display');
@@ -501,35 +552,53 @@ function saveGasUrl() {
   if (!input) return;
   const url = input.value.trim();
   if (!url || !url.startsWith('https://script.google.com/macros/s/')) {
-    return Swal.fire({ icon: 'warning', title: '網址格式錯誤', text: '請貼上完整的 GAS 部署網址（以 https://script.google.com/macros/s/ 開頭）' });
+    return Swal.fire({ icon: 'warning', title: '網址格式錯誤', text: '請貼上完整的 GAS 部署網址' });
   }
-  app.gasUrl = url;
-  _saveGasUrlToStorage(url);
-  _initGasUrlDisplay();
-  toggleGasUrlEdit();
-  Swal.fire({ icon: 'success', title: '✅ 網址已更新！', text: '正在重新連線…', timer: 1200, showConfirmButton: false });
+  app.gasUrl = url; _saveGasUrlToStorage(url); _initGasUrlDisplay(); toggleGasUrlEdit();
+  Swal.fire({ icon: 'success', title: '✅ 網址已更新！', timer: 1200, showConfirmButton: false });
   setTimeout(() => loadTasksForLogin(), 1400);
 }
 
 function resetToDefaultGasUrl() {
   app.gasUrl = DEFAULT_GAS_URL;
   try { localStorage.removeItem('gasUrl'); } catch(e) {}
-  _initGasUrlDisplay();
-  toggleGasUrlEdit();
-  Swal.fire({ icon: 'success', title: '✅ 已還原預設網址', text: '正在重新連線…', timer: 1200, showConfirmButton: false });
+  _initGasUrlDisplay(); toggleGasUrlEdit();
+  Swal.fire({ icon: 'success', title: '✅ 已還原預設網址', timer: 1200, showConfirmButton: false });
   setTimeout(() => loadTasksForLogin(), 1200);
 }
 
+async function saveWorkerUrl() {
+  const input = document.getElementById('setting-worker-url');
+  if (!input) return;
+  const url = input.value.trim() || DEFAULT_CLAUDE_WORKER_URL;
+  app.claudeWorkerUrl = url; _saveClaudeWorkerUrl(url);
+  Swal.fire({ icon: 'success', title: '✅ Worker 網址已儲存', timer: 1200, showConfirmButton: false });
+}
+
 // ==========================================
-// 🌐 API 呼叫層 - Worker Fetch → JSONP 雙重保險
+// 🌩️ Claude Worker 引擎選擇 UI 事件
+// ==========================================
+function onWizEngineChange() {
+  const val = document.querySelector('input[name="wiz-engine"]:checked')?.value;
+  document.getElementById('wiz-worker-hint').style.display = val === 'worker' ? '' : 'none';
+}
+
+function onWsEngineChange() {
+  const val = document.querySelector('input[name="ws-engine"]:checked')?.value;
+  document.getElementById('ws-worker-hint').style.display = val === 'worker' ? '' : 'none';
+}
+
+// ==========================================
+// 🌐 API 呼叫層
 // ==========================================
 const API = {
+
+  // ─── 透過 Cloudflare Worker Proxy → JSONP 雙重保險（小資料）─────────────
   _call: async (action, data = {}) => {
     const payloadStr = JSON.stringify({ action, data });
     const isLarge = payloadStr.length > 1500 || action === 'uploadTaskData' || action === 'saveWorksheetToCloud';
 
     if (!isLarge) {
-      // 優先：透過 Cloudflare Worker 轉發（無 CORS 問題，任何瀏覽器狀態皆可）
       try {
         const workerResp = await fetch(
           WORKER_URL + '?payload=' + encodeURIComponent(payloadStr),
@@ -543,19 +612,13 @@ const API = {
         console.warn('[API] Worker 失敗，降級使用 JSONP：', workerErr.message);
       }
 
-      // Fallback：JSONP 直連 GAS（Worker 不可用時備援）
       return new Promise((resolve, reject) => {
         const cbName = '_gas_cb_' + Date.now() + '_' + Math.floor(Math.random() * 99999);
         let isDone = false;
-        const timer = setTimeout(() => {
-          if (isDone) return;
-          isDone = true; cleanup();
-          reject(new Error('連線逾時（15秒）。'));
-        }, 15000);
+        const timer = setTimeout(() => { if (isDone) return; isDone = true; cleanup(); reject(new Error('連線逾時（15秒）。')); }, 15000);
         const cleanup = () => { delete window[cbName]; const el = document.getElementById(cbName); if (el) el.remove(); };
         window[cbName] = (res) => {
-          if (isDone) return;
-          isDone = true; clearTimeout(timer); cleanup();
+          if (isDone) return; isDone = true; clearTimeout(timer); cleanup();
           if (res && res.status === 'success') resolve(res.data);
           else reject(new Error(res ? res.message : '後端發生未知錯誤'));
         };
@@ -564,32 +627,34 @@ const API = {
         const script = document.createElement('script');
         script.id = cbName;
         script.src = reqUrl + '&callback=' + cbName;
-        script.onerror = () => {
-          if (isDone) return;
-          cleanup(); isDone = true; clearTimeout(timer);
-          reject(new Error('Failed to fetch'));
-        };
+        script.onerror = () => { if (isDone) return; cleanup(); isDone = true; clearTimeout(timer); reject(new Error('Failed to fetch')); };
         document.body.appendChild(script);
       });
-
     } else {
-      // 大資料：text/plain POST 直打 GAS（避免 CORS preflight）
       try {
-        const resp = await fetch(app.gasUrl, {
-          method: 'POST',
-          headers: { 'Content-Type': 'text/plain;charset=utf-8' },
-          body: payloadStr,
-          redirect: 'follow'
-        });
+        const resp = await fetch(app.gasUrl, { method: 'POST', headers: { 'Content-Type': 'text/plain;charset=utf-8' }, body: payloadStr, redirect: 'follow' });
         if (!resp.ok) throw new Error('伺服器狀態碼 ' + resp.status);
         const json = await resp.json();
         if (json.status !== 'success') throw new Error(json.message || '後端回報錯誤');
         return json.data;
-      } catch (err) {
-        console.error('[API POST Error]', err);
-        throw new Error('資料傳輸失敗（' + err.message + '）');
-      }
+      } catch (err) { throw new Error('資料傳輸失敗（' + err.message + '）'); }
     }
+  },
+
+  // ─── ★ 新增：Claude Worker 前端直呼叫（解決 GAS 30 秒超時）────────────
+  // Worker 端點預期接收 POST JSON { action, data }，回傳 { status, data/message }
+  _callWorker: async (action, data = {}) => {
+    const workerUrl = app.claudeWorkerUrl;
+    if (!workerUrl) throw new Error('Claude Worker 網址未設定，請至設定頁填入。');
+    const resp = await fetch(workerUrl, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ action, data })
+    });
+    if (!resp.ok) throw new Error('Worker HTTP ' + resp.status);
+    const json = await resp.json();
+    if (json.status === 'success' || json.status === 'ok') return json.data;
+    throw new Error(json.message || 'Worker 回報錯誤');
   },
 
   _submitWithRetry: async (action, data={}) => API._call(action, data),
@@ -606,13 +671,25 @@ const API = {
   clearBankCache:()=>API._call('clearBankCache'),
   clearNodesFromBank:(a,g,s)=>API._call('clearNodesFromBank',{nodesArray:a,grade:g,subject:s}),
   uploadTaskData:(n,g,s,d,u)=>API._call('uploadTaskData',{taskName:n,grade:g,subject:s,studentData:d,uniqueNodes:u}),
-  generateBatch:(a,g,s,i)=>API._call('generateBatch',{nodesArray:a,grade:g,subject:s,batchIndex:i}),
+
+  // ─── 出題：根據引擎選擇呼叫 GAS 或 Claude Worker ───────────────────────
+  generateBatch:(a,g,s,i,useWorker)=>{
+    if (useWorker) return API._callWorker('generateBatch',{nodesArray:a,grade:g,subject:s,batchIndex:i});
+    return API._call('generateBatch',{nodesArray:a,grade:g,subject:s,batchIndex:i});
+  },
   generateBatchFromFolder:(f,a,g,s,i,m)=>API._call('generateBatchFromFolder',{folderId:f,nodesArray:a,grade:g,subject:s,batchIndex:i,mode:m}),
   regenerateBatchForTask:(n,i,m,f)=>API._call('regenerateBatchForTask',{taskName:n,batchIndex:i,mode:m,folderId:f}),
   generateQuiz:(w,t)=>API._call('generateQuiz',{weakNode:w,taskName:t}),
   submitQuizResult:(p)=>API._submitWithRetry('submitQuizResult',{payload:p}),
   getTaskResults:(n)=>API._call('getTaskResults',{taskName:n}),
   analyzeClassWeakNodes:(n)=>API._call('analyzeClassWeakNodes',{taskName:n}),
+
+  // ─── 學習單：根據引擎選擇呼叫 GAS 或 Claude Worker ─────────────────────
+  generateTeachingWorksheet:(n,g,s,useWorker)=>{
+    if (useWorker) return API._callWorker('generateTeachingWorksheet',{topNodes:n,grade:g,subject:s});
+    return API._call('generateTeachingWorksheet',{topNodes:n,grade:g,subject:s});
+  },
+
   getGeminiSettings:()=>API._call('getGeminiSettings'),
   updateGeminiSettings:(m,p,pwd)=>API._call('updateGeminiSettings',{model:m,isPaid:p,pwd}),
   getQuestionErrorRates:(n)=>API._call('getQuestionErrorRates',{taskName:n}),
@@ -625,7 +702,7 @@ const API = {
 };
 
 // ==========================================
-// 🛠️ UI 與輔助函數
+// 🛠️ UI 輔助
 // ==========================================
 function showView(name){
   ['login','admin','quiz','result'].forEach(v=>{
@@ -646,15 +723,14 @@ function isValidNode(val){const s=String(val||'').trim();if(!s||['-','未診斷'
 window.addEventListener('DOMContentLoaded', () => {
   _initGasUrlDisplay();
 
+  // 設定頁 Worker URL 顯示
+  const workerInput = document.getElementById('setting-worker-url');
+  if (workerInput) workerInput.value = app.claudeWorkerUrl;
+
   const urlParams = new URLSearchParams(window.location.search);
   const practiceTask = urlParams.get('practice');
-  if (practiceTask) {
-    showView('login');
-    initPracticeMode(practiceTask);
-  } else {
-    showView('login');
-    loadTasksForLogin();
-  }
+  if (practiceTask) { showView('login'); initPracticeMode(practiceTask); }
+  else { showView('login'); loadTasksForLogin(); }
 
   document.getElementById('wiz-custom-node')?.addEventListener('keydown', e=>{if(e.key==='Enter') addWizCustomNode();});
   updateWizNodePresets();
@@ -666,39 +742,30 @@ window.addEventListener('DOMContentLoaded', () => {
 });
 
 // ==========================================
-// 🏫 精靈（Wizard）功能 - 完整實作
+// 🏫 精靈（Wizard）
 // ==========================================
-
-/** 更新精靈的節點預設按鈕 */
 function updateWizNodePresets() {
   const grade = document.getElementById('wiz-grade')?.value || '五年級';
   const subject = document.getElementById('wiz-subject')?.value || '數學';
   const presets = (PRESET_NODES[grade] || {})[subject] || [];
   const container = document.getElementById('wiz-node-presets');
   if (!container) return;
-
   if (!presets.length) { container.innerHTML = '<span class="text-muted small">（此年級/科目無預設節點）</span>'; return; }
-
   container.innerHTML = presets.map(node => {
     const active = wizSelectedNodes.includes(node) ? 'active' : '';
     return `<span class="node-preset-btn ${active}" onclick="toggleWizNode(this, '${esc(node)}')">${esc(node)}</span>`;
   }).join('');
-
-  // 更新表頭
   const th = document.getElementById('wiz-node-header');
   if (th) th.textContent = `弱點節點（從已選 ${wizSelectedNodes.length} 個）`;
 }
 
-/** 切換精靈節點選取狀態 */
 function toggleWizNode(el, node) {
   const idx = wizSelectedNodes.indexOf(node);
   if (idx >= 0) { wizSelectedNodes.splice(idx, 1); el.classList.remove('active'); }
   else { wizSelectedNodes.push(node); el.classList.add('active'); }
-  _renderWizSelectedNodes();
-  _syncWizStudentNodeSelects();
+  _renderWizSelectedNodes(); _syncWizStudentNodeSelects();
 }
 
-/** 渲染已選節點清單 */
 function _renderWizSelectedNodes() {
   const container = document.getElementById('wiz-selected-nodes');
   if (!container) return;
@@ -713,138 +780,103 @@ function _renderWizSelectedNodes() {
   if (th) th.textContent = `弱點節點（從已選 ${wizSelectedNodes.length} 個）`;
 }
 
-/** 移除已選節點 */
-function removeWizNode(idx) {
-  wizSelectedNodes.splice(idx, 1);
-  _renderWizSelectedNodes();
-  updateWizNodePresets(); // 重繪按鈕狀態
-  _syncWizStudentNodeSelects();
-}
-
-/** 新增自訂節點 */
+function removeWizNode(idx) { wizSelectedNodes.splice(idx, 1); _renderWizSelectedNodes(); updateWizNodePresets(); _syncWizStudentNodeSelects(); }
 function addWizCustomNode() {
-  const input = document.getElementById('wiz-custom-node');
-  if (!input) return;
-  const val = input.value.trim();
-  if (!val) return;
+  const input = document.getElementById('wiz-custom-node'); if (!input) return;
+  const val = input.value.trim(); if (!val) return;
   if (!isValidNode(val)) return Swal.fire({ icon: 'warning', title: '節點名稱無效', text: '請輸入有意義的知識節點名稱（至少3個字）' });
-  if (!wizSelectedNodes.includes(val)) {
-    wizSelectedNodes.push(val);
-    _renderWizSelectedNodes();
-    _syncWizStudentNodeSelects();
-  }
+  if (!wizSelectedNodes.includes(val)) { wizSelectedNodes.push(val); _renderWizSelectedNodes(); _syncWizStudentNodeSelects(); }
   input.value = '';
 }
-
-/** 同步更新學生表格裡的節點下拉選單 */
 function _syncWizStudentNodeSelects() {
-  const tbody = document.getElementById('wiz-student-tbody');
-  if (!tbody) return;
+  const tbody = document.getElementById('wiz-student-tbody'); if (!tbody) return;
   tbody.querySelectorAll('.wiz-node-select').forEach(sel => {
-    const currentVal = sel.value;
-    sel.innerHTML = '<option value="">（通用練習）</option>' +
-      wizSelectedNodes.map(n => `<option value="${esc(n)}" ${currentVal===n?'selected':''}>${esc(n)}</option>`).join('');
+    const cv = sel.value;
+    sel.innerHTML = '<option value="">（通用練習）</option>' + wizSelectedNodes.map(n => `<option value="${esc(n)}" ${cv===n?'selected':''}>${esc(n)}</option>`).join('');
   });
 }
-
-/** 新增一列學生 */
 function addWizStudentRow() {
-  const tbody = document.getElementById('wiz-student-tbody');
-  if (!tbody) return;
+  const tbody = document.getElementById('wiz-student-tbody'); if (!tbody) return;
   const rowNum = tbody.children.length + 1;
-  const nodeOptions = '<option value="">（通用練習）</option>' +
-    wizSelectedNodes.map(n => `<option value="${esc(n)}">${esc(n)}</option>`).join('');
+  const nodeOptions = '<option value="">（通用練習）</option>' + wizSelectedNodes.map(n => `<option value="${esc(n)}">${esc(n)}</option>`).join('');
   const tr = document.createElement('tr');
-  tr.innerHTML = `
-    <td><input type="text" class="form-control form-control-sm wiz-num" placeholder="${rowNum}"></td>
-    <td><input type="text" class="form-control form-control-sm wiz-name" placeholder="姓名"></td>
-    <td><select class="form-select form-select-sm wiz-node-select">${nodeOptions}</select></td>
-    <td><button type="button" class="btn btn-outline-danger btn-sm py-0 px-1" onclick="this.closest('tr').remove()"><i class="fa-solid fa-xmark"></i></button></td>`;
+  tr.innerHTML = `<td><input type="text" class="form-control form-control-sm wiz-num" placeholder="${rowNum}"></td><td><input type="text" class="form-control form-control-sm wiz-name" placeholder="姓名"></td><td><select class="form-select form-select-sm wiz-node-select">${nodeOptions}</select></td><td><button type="button" class="btn btn-outline-danger btn-sm py-0 px-1" onclick="this.closest('tr').remove()"><i class="fa-solid fa-xmark"></i></button></td>`;
   tbody.appendChild(tr);
 }
-
-/** 批次新增學生列 */
-function addWizStudentRows(count) {
-  for (let i = 0; i < count; i++) addWizStudentRow();
-}
-
-/** 收集精靈學生資料 */
+function addWizStudentRows(count) { for (let i = 0; i < count; i++) addWizStudentRow(); }
 function _collectWizStudents() {
-  const rows = document.querySelectorAll('#wiz-student-tbody tr');
-  const students = [];
+  const rows = document.querySelectorAll('#wiz-student-tbody tr'), students = [];
   rows.forEach(tr => {
     const num = tr.querySelector('.wiz-num')?.value.trim() || '';
     const name = tr.querySelector('.wiz-name')?.value.trim() || '';
     const node = tr.querySelector('.wiz-node-select')?.value || '';
-    if (num) {
-      students.push({
-        number: num,
-        name: name,
-        weakNodes: node ? [node] : wizSelectedNodes.slice(0, 3) // 未指定則套用前3個選定節點
-      });
-    }
+    if (num) students.push({ number: num, name, weakNodes: node ? [node] : wizSelectedNodes.slice(0, 3) });
   });
   return students;
 }
 
-/** 精靈：初始化資料庫 */
 async function wizardInitDB() {
   Swal.fire({ title: '初始化資料庫…', allowOutsideClick: false, didOpen: () => Swal.showLoading() });
-  try {
-    const msg = await API.setupDatabase();
-    Swal.fire({ icon: 'success', title: '初始化完成', html: msg.replace(/\n/g, '<br>'), confirmButtonText: '確定' });
-  } catch(e) {
-    Swal.fire({ icon: 'error', title: '初始化失敗', text: e.message });
-  }
+  try { const msg = await API.setupDatabase(); Swal.fire({ icon: 'success', title: '初始化完成', html: msg.replace(/\n/g, '<br>'), confirmButtonText: '確定' }); }
+  catch(e) { Swal.fire({ icon: 'error', title: '初始化失敗', text: e.message }); }
 }
 
-/** 精靈：建立任務並出題 */
 async function wizardCreateAndGenerate() {
   const taskName = document.getElementById('wiz-task-name')?.value.trim() || '';
   const grade = document.getElementById('wiz-grade')?.value || '';
   const subject = document.getElementById('wiz-subject')?.value || '';
   const students = _collectWizStudents();
+  const useWorker = document.querySelector('input[name="wiz-engine"]:checked')?.value === 'worker';
 
   if (!taskName) return Swal.fire({ icon: 'warning', title: '請輸入任務名稱' });
   if (!students.length) return Swal.fire({ icon: 'warning', title: '請輸入至少一位學生資料（座號）' });
 
   const uniqueNodes = [...new Set(students.flatMap(s => s.weakNodes).filter(isValidNode))];
-
   const summary = document.getElementById('wiz-summary');
   if (summary) {
     summary.style.display = '';
-    summary.innerHTML = `任務：<b>${esc(taskName)}</b>｜${grade}/${subject}｜${students.length} 位學生｜${uniqueNodes.length} 個節點`;
+    summary.innerHTML = `任務：<b>${esc(taskName)}</b>｜${grade}/${subject}｜${students.length} 位學生｜${uniqueNodes.length} 個節點${useWorker ? '｜<span class="badge badge-worker ms-1">Claude Worker</span>' : ''}`;
   }
 
-  const pArea = document.getElementById('wiz-progress-area');
-  const pBar = document.getElementById('wiz-progress-bar');
-  const pMsg = document.getElementById('wiz-progress-msg');
-  const pEl = document.getElementById('wiz-elapsed');
+  const pArea = document.getElementById('wiz-progress-area'), pBar = document.getElementById('wiz-progress-bar'), pMsg = document.getElementById('wiz-progress-msg'), pEl = document.getElementById('wiz-elapsed');
   if (pArea) pArea.style.display = '';
   if (pBar) pBar.style.width = '0%';
   if (pMsg) pMsg.textContent = '上傳學生名冊…';
-  _waitStart = Date.now();
-  startProgress(pMsg, pEl);
+  _waitStart = Date.now(); startProgress(pMsg, pEl);
 
   try {
     await API.uploadTaskData(taskName, grade, subject, students, uniqueNodes);
     if (pBar) pBar.style.width = '10%';
     if (pMsg) pMsg.textContent = '✅ 名冊已儲存，開始 AI 出題…';
 
-    let gs = { isPaid: false };
-    try { gs = await API.getGeminiSettings(); } catch(e) {}
-    const delay = gs.isPaid ? 500 : 6000;
+    let gs = { isPaid: false }; try { gs = await API.getGeminiSettings(); } catch(e) {}
+    const delay = useWorker ? 1000 : (gs.isPaid ? 500 : 6000);
 
-    let batchIndex = 0, totalBatches = null;
-    while (true) {
-      const result = await API.generateBatch(uniqueNodes.length > 0 ? uniqueNodes : ['通用基礎練習'], grade, subject, batchIndex);
-      totalBatches = result.total || totalBatches || 1;
-      const pct = Math.min(95, Math.round(10 + (result.current / Math.max(totalBatches, 1)) * 85));
-      if (pBar) pBar.style.width = pct + '%';
-      if (pMsg) pMsg.innerHTML = `✅ <b>${result.current}</b>/${totalBatches} 批完成（${pct}%）`;
-      if (result.done) break;
-      batchIndex++;
-      await sleep(delay);
+    if (useWorker) {
+      // ─── Claude Worker 模式：單次呼叫，Worker 負責所有批次 ───────────────
+      if (pMsg) pMsg.textContent = '🔄 Claude Worker 生成中（無超時限制）…';
+      if (pBar) pBar.style.width = '30%';
+      const result = await API.generateBatch(
+        uniqueNodes.length > 0 ? uniqueNodes : ['通用基礎練習'],
+        grade, subject, 0, true
+      );
+      if (pBar) pBar.style.width = '100%';
+      if (pMsg) pMsg.innerHTML = `🎉 Worker 完成！`;
+    } else {
+      // ─── GAS 模式：分批輪詢 ─────────────────────────────────────────────
+      let batchIndex = 0, totalBatches = null;
+      while (true) {
+        const result = await API.generateBatch(
+          uniqueNodes.length > 0 ? uniqueNodes : ['通用基礎練習'],
+          grade, subject, batchIndex, false
+        );
+        totalBatches = result.total || totalBatches || 1;
+        const pct = Math.min(95, Math.round(10 + (result.current / Math.max(totalBatches, 1)) * 85));
+        if (pBar) pBar.style.width = pct + '%';
+        if (pMsg) pMsg.innerHTML = `✅ <b>${result.current}</b>/${totalBatches} 批完成（${pct}%）`;
+        if (result.done) break;
+        batchIndex++; await sleep(delay);
+      }
     }
 
     stopProgress();
@@ -853,9 +885,7 @@ async function wizardCreateAndGenerate() {
     if (pMsg) pMsg.innerHTML = `🎉 完成！耗時 <b>${elapsed}</b>`;
     if (pEl) pEl.textContent = '';
 
-    app.taskList = await API.getTasks();
-    populateAdminTaskDropdowns();
-
+    app.taskList = await API.getTasks(); populateAdminTaskDropdowns();
     Swal.fire({ icon: 'success', title: '🎉 任務建立完成！', html: `「${esc(taskName)}」已完成出題。<br><span class="badge bg-secondary">耗時：${elapsed}</span>`, confirmButtonText: '好的' });
   } catch(e) {
     stopProgress();
@@ -865,17 +895,14 @@ async function wizardCreateAndGenerate() {
 }
 
 // ==========================================
-// 🧑‍🎓 登入與學生功能
+// 🧑‍🎓 登入與學生
 // ==========================================
 async function loadTasksForLogin() {
   const sel = document.getElementById('login-task'), msg = document.getElementById('login-status-msg');
   sel.innerHTML = '<option value="">-- 連線中… --</option>';
   if (msg) msg.textContent = '';
   try {
-    const [tasks, helpUrl] = await Promise.all([
-      API.getTasks(),
-      API.getHelpUrl().catch(() => '')
-    ]);
+    const [tasks, helpUrl] = await Promise.all([API.getTasks(), API.getHelpUrl().catch(() => '')]);
     app.taskList = tasks;
     if (!tasks.length) {
       sel.innerHTML = '<option value="">-- 目前沒有測驗任務 --</option>';
@@ -947,15 +974,12 @@ async function studentLogin() {
     const questions = await API.generateQuiz(weakNode, taskName);
     Swal.close();
     if (!questions || questions.length === 0) {
-      return Swal.fire({ icon: 'warning', title: '題庫尚未建立', html: '老師尚未完成此任務的出題。<br><ul class="text-start small mt-2"><li>尚未點選「上傳並開始出題」</li><li>Gemini API 配額不足</li><li>弱點節點格式有誤</li></ul>' });
+      return Swal.fire({ icon: 'warning', title: '題庫尚未建立', html: '老師尚未完成此任務的出題。<br><ul class="text-start small mt-2"><li>尚未點選「建立任務並出題」</li><li>Gemini API 配額不足</li><li>弱點節點格式有誤</li></ul>' });
     }
     startQuiz(questions);
   } catch(e) { Swal.close(); Swal.fire({ icon: 'error', title: '載入題目失敗', text: e.message }); }
 }
 
-// ==========================================
-// 🧪 練習模式（補救練習連結）
-// ==========================================
 async function initPracticeMode(taskName) {
   const sel = document.getElementById('login-task'), msg = document.getElementById('login-status-msg');
   if (msg) msg.innerHTML = `<span class="text-info">📎 補救練習模式：<b>${esc(taskName)}</b></span>`;
@@ -966,31 +990,23 @@ async function initPracticeMode(taskName) {
     if (!task) { if (msg) msg.innerHTML = `<span class="text-danger">找不到任務「${esc(taskName)}」</span>`; return; }
     sel.innerHTML = `<option value="${esc(taskName)}">${esc(taskName)}</option>`;
     await onTaskChange();
-  } catch(e) {
-    if (msg) msg.innerHTML = `<span class="text-danger">連線失敗：${esc(e.message)}</span>`;
-  }
+  } catch(e) { if (msg) msg.innerHTML = `<span class="text-danger">連線失敗：${esc(e.message)}</span>`; }
 }
 
 // ==========================================
-// 🛡️ 管理員功能
+// 🛡️ 管理員
 // ==========================================
 async function adminLogin() {
   const pwd = document.getElementById('admin-pwd').value;
   if (!pwd) return Swal.fire({ icon: 'warning', title: '請輸入管理員密碼' });
   Swal.fire({ title: '驗證中…', allowOutsideClick: false, didOpen: () => Swal.showLoading() });
   try {
-    const ok = await API.verifyAdmin(pwd);
-    Swal.close();
+    const ok = await API.verifyAdmin(pwd); Swal.close();
     if (!ok) return Swal.fire({ icon: 'error', title: '密碼錯誤' });
-    app.adminPwd = pwd;
-    showView('admin');
-    populateAdminTaskDropdowns();
-    loadSettingsTab();
+    app.adminPwd = pwd; showView('admin'); populateAdminTaskDropdowns(); loadSettingsTab();
   } catch(e) { Swal.close(); Swal.fire({ icon: 'error', title: '登入失敗', text: e.message }); }
 }
-
 function logout() { app.adminPwd = ''; showView('login'); loadTasksForLogin(); }
-
 function populateAdminTaskDropdowns() {
   ['results-task', 'analysis-task'].forEach(id => {
     const sel = document.getElementById(id); if (!sel) return;
@@ -1000,7 +1016,7 @@ function populateAdminTaskDropdowns() {
 }
 
 // ==========================================
-// 📁 Excel 解析與上傳
+// 📁 Excel 解析
 // ==========================================
 function previewExcel() {
   const file = document.getElementById('excel-file').files[0];
@@ -1025,8 +1041,7 @@ function previewExcel() {
           if (!name) { const m = num.match(/號\s*([\u4e00-\u9fa5]{2,4})/); if (m) { name = m[1]; num = num.replace(/\s+[\u4e00-\u9fa5]{2,4}.*$/, '').trim(); } }
           let wn = []; try { wn = JSON.parse(r[3] || '[]'); } catch(e) {}
           wn = wn.filter(isValidNode);
-          students.push({ number: num, name, weakNodes: wn });
-          wn.forEach(n => allNodes.add(n));
+          students.push({ number: num, name, weakNodes: wn }); wn.forEach(n => allNodes.add(n));
         });
       } else {
         let hasValid = false;
@@ -1038,20 +1053,14 @@ function previewExcel() {
             let num = String(r[0]).trim(), name = String(r[1] || '').trim();
             const wn = [];
             for (let j = 2; j < r.length; j++) { const v = String(r[j] || '').trim(); if (isValidNode(v)) wn.push(v); }
-            students.push({ number: num, name, weakNodes: wn });
-            wn.forEach(n => allNodes.add(n));
+            students.push({ number: num, name, weakNodes: wn }); wn.forEach(n => allNodes.add(n));
           });
         } else { formatDetected = '因材網原始格式（無法直接使用）'; }
       }
       app.excelStudents = students; app.excelNodes = [...allNodes];
       document.getElementById('preview-count').textContent = `共 ${students.length} 位學生`;
       const thead = `<thead><tr><th>座號</th><th>原始姓名</th><th>匿名顯示</th><th>節點數</th><th>節點範例</th></tr></thead>`;
-      const tbody = '<tbody>' + students.map(s => `<tr>
-        <td>${esc(s.number)}</td><td>${esc(s.name) || '<em class="text-muted">（空）</em>'}</td>
-        <td class="fw-bold text-primary">${esc(formatStudentLabel(s))}</td>
-        <td><span class="badge ${s.weakNodes.length > 0 ? 'bg-primary' : 'bg-secondary'}">${s.weakNodes.length}</span></td>
-        <td class="small">${s.weakNodes.slice(0, 2).map(n => `<span class="weak-node-badge">${esc(n)}</span>`).join('')}</td>
-      </tr>`).join('') + '</tbody>';
+      const tbody = '<tbody>' + students.map(s => `<tr><td>${esc(s.number)}</td><td>${esc(s.name)||'<em class="text-muted">（空）</em>'}</td><td class="fw-bold text-primary">${esc(formatStudentLabel(s))}</td><td><span class="badge ${s.weakNodes.length>0?'bg-primary':'bg-secondary'}">${s.weakNodes.length}</span></td><td class="small">${s.weakNodes.slice(0,2).map(n=>`<span class="weak-node-badge">${esc(n)}</span>`).join('')}</td></tr>`).join('') + '</tbody>';
       document.getElementById('preview-table').innerHTML = thead + tbody;
       const nd = document.getElementById('preview-nodes');
       nd.innerHTML = allNodes.size > 0 ? [...allNodes].map(n => `<span class="weak-node-badge">${esc(n)}</span>`).join('') : '<span class="text-muted">（無有效節點）</span>';
@@ -1069,7 +1078,9 @@ function previewExcel() {
 }
 
 function toggleFolderInput() {
-  document.getElementById('folder-input-area').style.display = (document.querySelector('input[name="gen-mode"]:checked').value === 'ai') ? 'none' : '';
+  const mode = document.querySelector('input[name="gen-mode"]:checked').value;
+  document.getElementById('folder-input-area').style.display = (mode === 'ai' || mode === 'worker') ? 'none' : '';
+  document.getElementById('upload-worker-hint').style.display = (mode === 'worker') ? '' : 'none';
 }
 
 // ==========================================
@@ -1094,6 +1105,7 @@ async function uploadAndGenerate() {
   const subject = document.getElementById('task-subject').value;
   const mode = document.querySelector('input[name="gen-mode"]:checked').value;
   const folderId = document.getElementById('folder-id-input').value.trim();
+  const useWorker = (mode === 'worker');
   if (!taskName) return Swal.fire({ icon: 'warning', title: '請輸入任務名稱' });
   if (!app.excelStudents.length) return Swal.fire({ icon: 'warning', title: '請先上傳並預覽 Excel 名冊' });
   if (!app.excelNodes.length) {
@@ -1106,18 +1118,26 @@ async function uploadAndGenerate() {
     await API.uploadTaskData(taskName, grade, subject, app.excelStudents, app.excelNodes);
     pBar.style.width = '8%'; pMsg.textContent = '✅ 學生名冊已儲存，開始 AI 出題…';
     let gs = { isPaid: false }; try { gs = await API.getGeminiSettings(); } catch(e) {}
-    const delay = gs.isPaid ? 500 : 6000;
-    let batchIndex = 0, totalBatches = null;
-    while (true) {
-      let result;
-      if (mode === 'ai') result = await API.generateBatch(app.excelNodes, grade, subject, batchIndex);
-      else { const af = folderId || (await API.getFolderId()) || ''; result = await API.generateBatchFromFolder(af, app.excelNodes, grade, subject, batchIndex, mode); }
-      totalBatches = result.total || totalBatches || 1;
-      const pct = Math.min(95, Math.round(10 + (result.current / Math.max(totalBatches, 1)) * 85));
-      pBar.style.width = pct + '%'; pMsg.innerHTML = `✅ <b>${result.current}</b>/${totalBatches} 批完成（${pct}%）${result.message ? '— ' + result.message : ''}`;
-      if (result.done) break; batchIndex++;
-      await sleep(delay);
+    const delay = useWorker ? 1000 : (gs.isPaid ? 500 : 6000);
+
+    if (useWorker) {
+      pMsg.textContent = '🔄 Claude Worker 生成中（無超時限制）…';
+      pBar.style.width = '30%';
+      await API.generateBatch(app.excelNodes, grade, subject, 0, true);
+      pBar.style.width = '100%';
+    } else {
+      let batchIndex = 0, totalBatches = null;
+      while (true) {
+        let result;
+        if (mode === 'ai') result = await API.generateBatch(app.excelNodes, grade, subject, batchIndex, false);
+        else { const af = folderId || (await API.getFolderId()) || ''; result = await API.generateBatchFromFolder(af, app.excelNodes, grade, subject, batchIndex, mode); }
+        totalBatches = result.total || totalBatches || 1;
+        const pct = Math.min(95, Math.round(10 + (result.current / Math.max(totalBatches, 1)) * 85));
+        pBar.style.width = pct + '%'; pMsg.innerHTML = `✅ <b>${result.current}</b>/${totalBatches} 批完成（${pct}%）${result.message ? '— ' + result.message : ''}`;
+        if (result.done) break; batchIndex++; await sleep(delay);
+      }
     }
+
     stopProgress(); const elapsed = elapsedStr(); pBar.style.width = '100%'; pMsg.innerHTML = `🎉 完成！耗時 <b>${elapsed}</b>`; pEl.textContent = '';
     Swal.fire({ icon: 'success', title: '🎉 出題完成！', html: `「${esc(taskName)}」已完成出題。<br><span class="badge bg-secondary">耗時：${elapsed}</span>`, confirmButtonText: '好的' });
     app.taskList = await API.getTasks(); populateAdminTaskDropdowns();
@@ -1220,10 +1240,7 @@ async function regenTask(taskName) {
     const elapsed = elapsedStr(); stopProgress(); clearInterval(timerTick);
     Swal.fire({ icon: 'success', title: '🎉 出題完成！', html: `所有題目已準備就緒。<br><span class="badge bg-secondary">耗時：${elapsed}</span>`, confirmButtonText: '好的' });
     app.taskList = await API.getTasks();
-  } catch(e) {
-    stopProgress(); clearInterval(timerTick);
-    Swal.fire({ icon: 'error', title: '出題中斷', html: `<b>錯誤：</b>${esc(e.message)}`, confirmButtonText: '我知道了' });
-  }
+  } catch(e) { stopProgress(); clearInterval(timerTick); Swal.fire({ icon: 'error', title: '出題中斷', html: `<b>錯誤：</b>${esc(e.message)}`, confirmButtonText: '我知道了' }); }
 }
 
 // ==========================================
@@ -1317,20 +1334,17 @@ function toggleWsPreview() {
   const previewArea = document.getElementById('ws-preview-area'), btn = document.getElementById('ws-toggle-btn');
   app.wsPreviewOpen = !app.wsPreviewOpen;
   if (app.wsPreviewOpen) {
-    previewArea.style.display = '';
-    btn.innerHTML = '<i class="fa-solid fa-eye-slash me-1"></i>收起預覽';
+    previewArea.style.display = ''; btn.innerHTML = '<i class="fa-solid fa-eye-slash me-1"></i>收起預覽';
     const frame = document.getElementById('ws-preview-frame');
     if (app.wsHtml && (!frame.src || frame.src === 'about:blank') && !frame._blobUrl) { _writeToIframe(frame, app.wsHtml); }
-  } else {
-    previewArea.style.display = 'none';
-    btn.innerHTML = '<i class="fa-solid fa-eye me-1"></i>展開預覽';
-  }
+  } else { previewArea.style.display = 'none'; btn.innerHTML = '<i class="fa-solid fa-eye me-1"></i>展開預覽'; }
 }
 
 async function genWorksheet() {
   const ws = document.getElementById('worksheet-area');
   const topNodes = JSON.parse(ws.dataset.nodes || '[]'), grade = ws.dataset.grade, subject = ws.dataset.subject;
   const taskName = ws.dataset.taskname || '';
+  const useWorker = document.querySelector('input[name="ws-engine"]:checked')?.value === 'worker';
   if (!topNodes.length) return Swal.fire({ icon: 'warning', title: '無弱點節點資料' });
   document.getElementById('ws-state-idle').style.display = 'none';
   document.getElementById('ws-state-done').style.display = 'none';
@@ -1338,59 +1352,15 @@ async function genWorksheet() {
   document.getElementById('ws-preview-area').style.display = 'none';
   app.wsPreviewOpen = false;
   const progBar = document.getElementById('ws-progress-bar'), progMsg = document.getElementById('ws-progress-msg');
-  progBar.style.width = '10%'; progMsg.textContent = WAITING_MSGS[0]; _waitStart = Date.now();
-  
-  const rot = setInterval(() => { 
-    progMsg.textContent = WAITING_MSGS[Math.floor(Math.random() * WAITING_MSGS.length)]; 
-    progBar.style.width = Math.min(90, 10 + Math.round((Date.now() - _waitStart) / 1000) * 2) + '%'; 
-  }, 9000);
-  const tick = setInterval(() => { 
-    progBar.style.width = Math.min(90, 10 + Math.round((Date.now() - _waitStart) / 1000) * 1.5) + '%'; 
-  }, 2000);
-  
+  progBar.style.width = '10%';
+  progMsg.textContent = useWorker ? '🔄 Claude Worker 生成中（無超時限制）…' : WAITING_MSGS[0];
+  _waitStart = Date.now();
+  const rot = useWorker ? null : setInterval(() => { progMsg.textContent = WAITING_MSGS[Math.floor(Math.random() * WAITING_MSGS.length)]; progBar.style.width = Math.min(90, 10 + Math.round((Date.now() - _waitStart) / 1000) * 2) + '%'; }, 9000);
+  const tick = setInterval(() => { progBar.style.width = Math.min(90, 10 + Math.round((Date.now() - _waitStart) / 1000) * 1.5) + '%'; }, 2000);
   try {
-    // --- 新增功能：從前端直接呼叫 Claude Haiku API 生成學習單 ---
-    progMsg.textContent = '獲取系統提示詞...';
-    const prompts = await API.getSystemPrompts();
-    let promptTemplate = subject === '數學' ? prompts.mathWorksheetPrompt : prompts.chineseWorksheetPrompt;
-    
-    // 若無預設提示詞則提供基礎版
-    if (!promptTemplate) {
-        promptTemplate = `請為{{GRADE}}{{SUBJECT}}的學生，針對以下節點：{{NODES}}，設計一份差異化教學講義。請直接輸出乾淨的 HTML 格式，不要包含 \`\`\`html 等 Markdown 語法。`;
-    }
-
-    const finalPrompt = promptTemplate
-      .replace(/{{GRADE}}/g, grade)
-      .replace(/{{SUBJECT}}/g, subject)
-      .replace(/{{NODES}}/g, topNodes.join(', '));
-
-    progMsg.textContent = '呼叫 Claude API 進行出題...';
-
-// 發送請求到您提供的 Worker Proxy (注意：這裡不再夾帶 API Key)
-const claudeResp = await fetch('https://20260501claude-worksheet.sunny-f0b.workers.dev/v1/messages', {
-    method: 'POST',
-    headers: {
-        'Content-Type': 'application/json',
-        'anthropic-version': '2023-06-01'
-    },
-    body: JSON.stringify({
-        model: 'claude-3-haiku-20240307',
-        max_tokens: 4000,
-        messages: [{ role: 'user', content: finalPrompt }]
-    })
-});
-    if (!claudeResp.ok) {
-        const errStr = await claudeResp.text();
-        throw new Error(`API 錯誤 (${claudeResp.status}): ${errStr}`);
-    }
-
-    const claudeData = await claudeResp.json();
-    const htmlContent = claudeData.content[0].text;
-    // -------------------------------------------------------------
-
-    clearInterval(rot); clearInterval(tick);
+    const htmlContent = await API.generateTeachingWorksheet(topNodes, grade, subject, useWorker);
+    if (rot) clearInterval(rot); clearInterval(tick);
     progBar.style.width = '100%'; progMsg.textContent = '✅ 學習單生成完成！';
-    
     app.wsHtml = _sanitizeWsHtml(htmlContent);
     if (taskName) {
       API.saveWorksheetToCloud(taskName, grade, subject, app.wsHtml)
@@ -1402,10 +1372,10 @@ const claudeResp = await fetch('https://20260501claude-worksheet.sunny-f0b.worke
     setTimeout(() => { document.getElementById('ws-gen-progress').style.display = 'none'; }, 1800);
     Swal.fire({ icon: 'success', title: '學習單已生成！', text: '請點「展開預覽」查看，或選擇教師版/學生版列印。', timer: 2500, showConfirmButton: false });
   } catch(e) {
-    clearInterval(rot); clearInterval(tick);
+    if (rot) clearInterval(rot); clearInterval(tick);
     document.getElementById('ws-gen-progress').style.display = 'none';
     document.getElementById('ws-state-idle').style.display = '';
-    Swal.fire({ icon: 'error', title: '生成失敗', text: e.message, footer: '網路或 API 配額問題，請稍候重試' });
+    Swal.fire({ icon: 'error', title: '生成失敗', text: e.message, footer: '若為 API 配額問題，請等 60 秒後重試，或改用 Claude Worker 模式' });
   }
 }
 
@@ -1504,11 +1474,9 @@ function printWorksheet(mode) {
 // ==========================================
 function startQuiz(questions) {
   app.quizQuestions = questions; app.qIndex = 0; app.answers = [];
-  app.startTime = Date.now();
-  showView('quiz');
+  app.startTime = Date.now(); showView('quiz');
   document.getElementById('quiz-student-label').textContent = formatStudentLabel(app.currentStudent) + '　' + (app.currentTask?.taskName || '');
-  startTimer();
-  renderQuestion();
+  startTimer(); renderQuestion();
 }
 
 function startTimer() {
@@ -1521,8 +1489,7 @@ function startTimer() {
 }
 
 function renderQuestion() {
-  const q = app.quizQuestions[app.qIndex];
-  const total = app.quizQuestions.length;
+  const q = app.quizQuestions[app.qIndex], total = app.quizQuestions.length;
   document.getElementById('quiz-progress-bar').style.width = ((app.qIndex / total) * 100) + '%';
   document.getElementById('quiz-question-label').textContent = `第 ${app.qIndex + 1} / ${total} 題`;
   document.getElementById('quiz-node-label').textContent = q.node ? `【${q.node}】` : '';
@@ -1531,7 +1498,6 @@ function renderQuestion() {
   document.getElementById('quiz-question-text').textContent = q.text || '';
   document.getElementById('quiz-hint').style.display = 'none';
   document.getElementById('next-btn').disabled = true;
-
   const optContainer = document.getElementById('quiz-options');
   if (q.type === 'fill') {
     optContainer.innerHTML = `<input type="text" class="fill-input" id="fill-answer" placeholder="請輸入答案" oninput="onFillInput(this)">`;
@@ -1547,20 +1513,17 @@ function renderQuestion() {
 }
 
 function onFillInput(input) { document.getElementById('next-btn').disabled = !input.value.trim(); }
-
 function selectOption(btn, label) {
   if (btn.disabled) return;
   document.querySelectorAll('.option-btn').forEach(b => { b.classList.remove('selected'); });
   btn.classList.add('selected');
   document.getElementById('next-btn').disabled = false;
 }
-
 function showHint() {
   const q = app.quizQuestions[app.qIndex];
   const hint = q.hint ? q.hint.replace(/^\[Level [ABCD]\]\s*/,'') : '此題無提示';
   const hintEl = document.getElementById('quiz-hint');
-  hintEl.textContent = '💡 ' + hint;
-  hintEl.style.display = '';
+  hintEl.textContent = '💡 ' + hint; hintEl.style.display = '';
 }
 
 function nextQuestion() {
@@ -1574,7 +1537,6 @@ function nextQuestion() {
     if (!selectedBtn) return;
     selected = selectedBtn.querySelector('.option-prefix').textContent.trim();
     correct = selected === String(q.answer || '').trim();
-    // 顯示正誤反饋
     document.querySelectorAll('.option-btn').forEach(b => {
       b.disabled = true;
       const lbl = b.querySelector('.option-prefix').textContent.trim();
@@ -1584,18 +1546,13 @@ function nextQuestion() {
   }
   app.answers.push({ node: q.node, level: q.level || '', text: q.text, selected, answer: q.answer, correct, hint: q.hint || '' });
   document.getElementById('next-btn').disabled = true;
-  setTimeout(() => {
-    app.qIndex++;
-    if (app.qIndex >= app.quizQuestions.length) finishQuiz();
-    else renderQuestion();
-  }, correct ? 600 : 1200);
+  setTimeout(() => { app.qIndex++; if (app.qIndex >= app.quizQuestions.length) finishQuiz(); else renderQuestion(); }, correct ? 600 : 1200);
 }
 
 async function finishQuiz() {
   if (app.timerInterval) { clearInterval(app.timerInterval); app.timerInterval = null; }
   const elapsed = Math.round((Date.now() - app.startTime) / 1000);
-  const correct = app.answers.filter(a => a.correct).length;
-  const total = app.answers.length;
+  const correct = app.answers.filter(a => a.correct).length, total = app.answers.length;
   const score = total > 0 ? Math.round((correct / total) * 100) : 0;
   showView('result');
   document.getElementById('result-name').textContent = formatStudentLabel(app.currentStudent);
@@ -1608,51 +1565,94 @@ async function finishQuiz() {
   wnEl.innerHTML = weakNodes.length ? '<p class="small fw-bold text-muted mb-1">建議加強節點：</p>' + weakNodes.map(([n]) => `<span class="weak-node-badge">${esc(n)}</span>`).join('') : '';
   const reviewEl = document.getElementById('result-review');
   reviewEl.innerHTML = app.answers.map((a, i) =>
-    `<div class="d-flex gap-2 p-2 mb-1 rounded ${a.correct ? 'bg-light' : 'bg-danger bg-opacity-10'}">
-      <span>${a.correct ? '✅' : '❌'}</span>
-      <div class="small flex-grow-1">
-        <div class="fw-bold">第${i + 1}題【${esc(a.node || '—')}】</div>
-        <div class="text-muted">${esc(a.text || '')}</div>
-        <div>作答：<b>${esc(a.selected)}</b>　正解：<b class="text-success">${esc(a.answer)}</b></div>
-        ${!a.correct && a.hint ? `<div class="text-secondary">💡 ${esc(a.hint.replace(/^\[Level [ABCD]\]\s*/, ''))}</div>` : ''}
-      </div>
-    </div>`
+    `<div class="d-flex gap-2 p-2 mb-1 rounded ${a.correct ? 'bg-light' : 'bg-danger bg-opacity-10'}"><span>${a.correct ? '✅' : '❌'}</span><div class="small flex-grow-1"><div class="fw-bold">第${i + 1}題【${esc(a.node || '—')}】</div><div class="text-muted">${esc(a.text || '')}</div><div>作答：<b>${esc(a.selected)}</b>　正解：<b class="text-success">${esc(a.answer)}</b></div>${!a.correct && a.hint ? `<div class="text-secondary">💡 ${esc(a.hint.replace(/^\[Level [ABCD]\]\s*/, ''))}</div>` : ''}</div></div>`
   ).join('');
-  // 上傳成績
   try {
-    await API.submitQuizResult({
-      taskName: app.currentTask?.taskName || '',
-      number: app.currentStudent?.number || '',
-      name: app.currentStudent?.name || '',
-      score, elapsed, details: app.answers
-    });
+    await API.submitQuizResult({ taskName: app.currentTask?.taskName || '', number: app.currentStudent?.number || '', name: app.currentStudent?.name || '', score, elapsed, details: app.answers });
   } catch(e) { console.warn('成績上傳失敗：', e.message); }
 }
 
 // ==========================================
 // ✏️ 計算紙
 // ==========================================
-let _resizeCanvas = null; // 提升為外部可呼叫
-
+let _resizeCanvas = null;
 function initCanvas() {
-  const canvas = document.getElementById('scratch-pad');
-  if (!canvas) return;
+  const canvas = document.getElementById('scratch-pad'); if (!canvas) return;
   try { sigPad = new SignaturePad(canvas, { backgroundColor: '#fff', penColor: '#1e3a5f' }); } catch(e) {}
-
   _resizeCanvas = function() {
     const ratio = Math.max(window.devicePixelRatio || 1, 1);
-    // 必須先確保 canvas 的父元素是可見的，才能正確取得 offsetWidth
     const data = sigPad?.toData ? sigPad.toData() : null;
-    canvas.width = canvas.offsetWidth * ratio;
-    canvas.height = canvas.offsetHeight * ratio;
-    const ctx = canvas.getContext('2d');
-    if (ctx) ctx.scale(ratio, ratio);
+    canvas.width = canvas.offsetWidth * ratio; canvas.height = canvas.offsetHeight * ratio;
+    const ctx = canvas.getContext('2d'); if (ctx) ctx.scale(ratio, ratio);
     if (sigPad) { sigPad.clear(); if (data && data.length) sigPad.fromData(data); }
   };
-
   window.addEventListener('resize', _resizeCanvas);
-  // 初始時 modal 是隱藏的，offsetWidth=0，所以這裡先不呼叫
-  // 等到第一次打開時才 resize（見 toggleScratch）
+}
+function toggleScratch() {
+  const modal = document.getElementById('scratch-modal');
+  const isOpening = !modal.classList.contains('is-open');
+  modal.classList.toggle('is-open');
+  if (isOpening) { requestAnimationFrame(() => { if (_resizeCanvas) _resizeCanvas(); }); }
+}
+function closeScratch() { document.getElementById('scratch-modal').classList.remove('is-open'); }
+function clearScratch() { if (sigPad) sigPad.clear(); }
+
+// ==========================================
+// ⚙️ 設定管理
+// ==========================================
+async function loadSettingsTab() {
+  try {
+    const [settings, gemini, folderId, prompts, helpUrl] = await Promise.all([
+      API.getQuizSettings(), API.getGeminiSettings(), API.getFolderId(),
+      API.getSystemPrompts(), API.getHelpUrl().catch(() => '')
+    ]);
+    document.getElementById('setting-quiz-count').value = settings.quizCount;
+    document.getElementById('setting-folder-id').value = folderId || '';
+    document.getElementById('setting-help-url').value = helpUrl || '';
+    document.getElementById('setting-worker-url').value = app.claudeWorkerUrl;
+    const modelSel = document.getElementById('setting-gemini-model');
+    const savedModel = gemini.model || 'gemma-4-31b-it';
+    if (![...modelSel.options].some(o => o.value === savedModel)) {
+      const opt = document.createElement('option'); opt.value = savedModel; opt.textContent = savedModel + '（自訂）'; modelSel.appendChild(opt);
+    }
+    modelSel.value = savedModel;
+    document.getElementById('setting-is-paid').checked = gemini.isPaid;
+    document.getElementById('prompt-math').value = prompts.mathPrompt || '';
+    document.getElementById('prompt-chinese').value = prompts.chinesePrompt || '';
+    document.getElementById('prompt-math-ws').value = prompts.mathWorksheetPrompt || '';
+    document.getElementById('prompt-chinese-ws').value = prompts.chineseWorksheetPrompt || '';
+  } catch(e) { console.warn('載入設定失敗:', e.message); }
 }
 
-function
+async function saveQuizCount() { try { const msg = await API.updateQuizSettings(document.getElementById('setting-quiz-count').value); Swal.fire({ icon: 'success', title: msg, timer: 1500, showConfirmButton: false }); } catch(e) { Swal.fire({ icon: 'error', title: '儲存失敗', text: e.message }); } }
+async function saveFolderId() {
+  let raw = document.getElementById('setting-folder-id').value.trim();
+  const m = raw.match(/\/folders\/([a-zA-Z0-9_-]+)/); if (m) raw = m[1];
+  document.getElementById('setting-folder-id').value = raw;
+  try { const msg = await API.updateFolderId(raw); Swal.fire({ icon: 'success', title: msg, timer: 2500, showConfirmButton: false }); } catch(e) { Swal.fire({ icon: 'error', title: '儲存失敗', text: e.message }); }
+}
+async function saveHelpUrl() {
+  const url = document.getElementById('setting-help-url').value.trim();
+  try { const msg = await API.updateHelpUrl(url, app.adminPwd); Swal.fire({ icon: 'success', title: msg, timer: 1500, showConfirmButton: false }); } catch(e) { Swal.fire({ icon: 'error', title: '儲存失敗', text: e.message }); }
+}
+async function saveGeminiSettings() {
+  try {
+    const model = document.getElementById('setting-gemini-model').value.trim(), isPaid = document.getElementById('setting-is-paid').checked;
+    const msg = await API.updateGeminiSettings(model, isPaid, app.adminPwd);
+    Swal.fire({ icon: 'success', title: msg, timer: 1500, showConfirmButton: false });
+    await loadSettingsTab();
+  } catch(e) { Swal.fire({ icon: 'error', title: '儲存失敗', text: e.message }); }
+}
+async function verifyAndSavePrompts() {
+  const mP = document.getElementById('prompt-math').value, cP = document.getElementById('prompt-chinese').value;
+  const mW = document.getElementById('prompt-math-ws').value, cW = document.getElementById('prompt-chinese-ws').value;
+  if (!mP || !cP) return Swal.fire({ icon: 'warning', title: '請填寫數學與國語的出題提示詞' });
+  try { const msg = await API.updateSystemPrompts(mP, cP, mW, cW, app.adminPwd); Swal.fire({ icon: 'success', title: msg, timer: 1500, showConfirmButton: false }); } catch(e) { Swal.fire({ icon: 'error', title: '儲存失敗', text: e.message }); }
+}
+async function initDB() {
+  Swal.fire({ title: '初始化資料庫中…', allowOutsideClick: false, didOpen: () => Swal.showLoading() });
+  try { const msg = await API.setupDatabase(); Swal.fire({ icon: 'success', title: '初始化完成', html: msg.replace(/\n/g, '<br>'), confirmButtonText: '確定' }); } catch(e) { Swal.fire({ icon: 'error', title: '初始化失敗', text: e.message }); }
+}
+</script>
+</body>
+</html>
