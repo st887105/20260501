@@ -3,8 +3,8 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
-  <!-- 版號更新為 v13.5：題庫管理顯示題目數 + 刪除任務功能 + 上傳後自動刷新題庫 -->
-  <title>車城國小｜學力檢測 AI 智慧補救系統 (v13.5)</title>
+  <!-- 版號更新為 v13.6：GAS URL 以 DEFAULT 為唯一依據 + Claude Worker 格式修正 -->
+  <title>車城國小｜學力檢測 AI 智慧補救系統 (v13.6)</title>
   <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/css/bootstrap.min.css" rel="stylesheet">
   <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/js/bootstrap.bundle.min.js"></script>
   <script src="https://cdn.jsdelivr.net/npm/sweetalert2@11"></script>
@@ -500,7 +500,7 @@
 
 <footer class="mt-4">
   <div class="container px-3">
-    車城國小資訊老師 @ Google Gemini 協作設計 ｜ v13.5 ｜
+    車城國小資訊老師 @ Google Gemini 協作設計 ｜ v13.6 ｜
     <a href="https://github.com/st887105/20260404" target="_blank"><i class="fa-brands fa-github me-1"></i>原始碼</a>
   </div>
 </footer>
@@ -520,15 +520,30 @@ const WORKER_URL = 'https://gas-proxy.sunny-f0b.workers.dev';
 // ✨ v13.4：Claude Worker（前端直呼叫，無 GAS 30 秒超時，用於題庫生成＋學習單）
 const DEFAULT_CLAUDE_WORKER_URL = 'https://20260501claude-worksheet.sunny-f0b.workers.dev';
 
-// 規則：永遠以 DEFAULT_GAS_URL 為主，localStorage 只在使用者明確「套用」後才覆蓋
+// 規則：DEFAULT_GAS_URL 是唯一權威來源。
+// 每次 DEFAULT 改變（代表部署了新 GAS），自動清除舊 localStorage，不再打到舊後端。
+// 使用者「套用新網址」時才允許覆蓋，且記錄當時的 DEFAULT 供下次比對。
 function _loadGasUrl() {
   try {
     const saved = localStorage.getItem('gasUrl');
-    return (saved && saved !== DEFAULT_GAS_URL) ? saved : DEFAULT_GAS_URL;
+    const savedDefault = localStorage.getItem('gasUrlDefault');
+    // DEFAULT 已更新 → 清除舊存值，強制使用新 DEFAULT
+    if (savedDefault && savedDefault !== DEFAULT_GAS_URL) {
+      localStorage.removeItem('gasUrl');
+      localStorage.removeItem('gasUrlDefault');
+      return DEFAULT_GAS_URL;
+    }
+    // 使用者曾明確設定過自訂網址才採用
+    if (saved && saved !== DEFAULT_GAS_URL) return saved;
+    return DEFAULT_GAS_URL;
   } catch(e) { return DEFAULT_GAS_URL; }
 }
 function _saveGasUrlToStorage(url) {
-  try { localStorage.setItem('gasUrl', url); } catch(e) {}
+  try {
+    localStorage.setItem('gasUrl', url);
+    // 記錄「設定時的 DEFAULT」，供下次偵測是否過期
+    localStorage.setItem('gasUrlDefault', DEFAULT_GAS_URL);
+  } catch(e) {}
 }
 function _loadClaudeWorkerUrl() {
   try { return localStorage.getItem('claudeWorkerUrl') || DEFAULT_CLAUDE_WORKER_URL; } catch(e) { return DEFAULT_CLAUDE_WORKER_URL; }
@@ -729,10 +744,13 @@ const API = {
   },
 
   // ✨ v13.4：Claude Worker 直呼叫（前端直連，無 GAS 超時限制）
+  // Worker 持有自己的 Claude API key，前端不需傳 Gemini key
+  // Worker 接受格式：POST { action, nodes, grade, subject } 或 { action, topNodes, grade, subject }
   _callClaude: async (action, data = {}) => {
     const workerUrl = app.claudeWorkerUrl;
     if (!workerUrl) throw new Error('Claude Worker 網址未設定，請至⚙️設定頁輸入');
-    const payload = { action, data };
+    // 直接把 action 和 data 的欄位攤平送給 Worker
+    const payload = Object.assign({ action }, data);
     try {
       const resp = await fetch(workerUrl, {
         method: 'POST',
@@ -741,13 +759,15 @@ const API = {
       });
       if (!resp.ok) {
         const errText = await resp.text().catch(() => '');
-        throw new Error(`Worker HTTP ${resp.status}${errText ? '：' + errText.slice(0, 100) : ''}`);
+        throw new Error('Worker HTTP ' + resp.status + (errText ? '：' + errText.slice(0, 120) : ''));
       }
       const json = await resp.json();
+      if (json.error) throw new Error(json.error);
       if (json.status === 'error') throw new Error(json.message || 'Worker 回報錯誤');
+      // Worker 可能直接回傳結果（html string / questions array）或包在 data 裡
       return json.data !== undefined ? json.data : json;
     } catch(err) {
-      if (err.message.includes('Worker HTTP') || err.message.includes('Worker 回報')) throw err;
+      if (err.message.startsWith('Worker HTTP') || err.message.includes('Worker 回報')) throw err;
       throw new Error('Claude Worker 連線失敗（' + err.message + '）');
     }
   },
@@ -774,7 +794,7 @@ const API = {
   getTaskResults:(n)=>API._call('getTaskResults',{taskName:n}),
   analyzeClassWeakNodes:(n)=>API._call('analyzeClassWeakNodes',{taskName:n}),
   generateTeachingWorksheet:(n,g,s)=>API._call('generateTeachingWorksheet',{topNodes:n,grade:g,subject:s}),
-  generateTeachingWorksheetClaude:(n,g,s)=>API._callClaude('generateTeachingWorksheet',{topNodes:n,grade:g,subject:s}),
+  generateTeachingWorksheetClaude:(n,g,s)=>API._callClaude('generateWorksheet',{topNodes:n,grade:g,subject:s}),
   getGeminiSettings:()=>API._call('getGeminiSettings'),
   updateGeminiSettings:(m,p,pwd)=>API._call('updateGeminiSettings',{model:m,isPaid:p,pwd}),
   getQuestionErrorRates:(n)=>API._call('getQuestionErrorRates',{taskName:n}),
@@ -789,7 +809,7 @@ const API = {
 
   // ✨ v13.4：Claude Worker 題庫生成（一次生成所有節點，無批次超時）
   generateAllBatchClaude: async (nodes, grade, subject) => {
-    return API._callClaude('generateBatchAll', { nodesArray: nodes, grade, subject });
+    return API._callClaude('generateQuestions', { nodes, grade, subject });
   },
 };
 
